@@ -8,8 +8,22 @@
 
 ## 项目结构
 
-暂无
+├─.vscode
+├─data 存放数据集
+├─utils
+├─mindspore
+├─efficientderain 去雨算法
+├─yolact 语义分割
+├─main.py
+└─README.md
 
 ## 项目人员
 
 梦
+
+## 资源链接
+
+[MindSpore 官网](https://www.mindspore.cn/)
+[去雨算法数据集](https://openi.pcl.ac.cn/innovation_contest/innov202305091742178/datasets)
+[去雨算法论文](https://arxiv.org/pdf/2009.09238.pdf)
+[去雨算法代码](https://github.com/tsingqguo/efficientderain)
