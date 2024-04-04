@@ -1,7 +1,5 @@
 import mindspore
-
-
-import network
+import utils.network as network
 def create_generator(opt):
     # Initialize the network
     generator = network.KPN(opt.color, opt.burst_length, opt.blind_est, opt.kernel_size, opt.sep_conv, \

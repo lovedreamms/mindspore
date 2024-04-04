@@ -38,7 +38,7 @@ def weights_init(net, init_type = 'normal', init_gain = 0.02):
     net.apply(init_func)
 
 
-class Basic(nn.Module):
+class Basic(nn.Cell):
     def __init__(self, in_ch, out_ch, g=16, channel_att=False, spatial_att=False):
         super(Basic, self).__init__()
         self.channel_att = channel_att
@@ -149,7 +149,7 @@ class KPN(nn.Cell):
         
         return pred
 
-class KernelConv(nn.Module):
+class KernelConv(nn.Cell):
     """
     the class of computing prediction
     """
