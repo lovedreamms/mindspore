@@ -43,27 +43,27 @@ class Basic(nn.Cell):
         super(Basic, self).__init__()
         self.channel_att = channel_att
         self.spatial_att = spatial_att
-        self.conv1 = nn.Sequential(
-                nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
+        self.conv1 = nn.SequentialCell(
+                nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1,pad_mode='pad'),
                 # nn.BatchNorm2d(out_ch),
                 nn.ReLU(),
-                nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1,pad_mode='pad'),
                 # nn.BatchNorm2d(out_ch),
                 nn.ReLU(),
-                nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1,pad_mode='pad'),
                 # nn.BatchNorm2d(out_ch),
                 nn.ReLU()
             )
 
         if channel_att:
-            self.att_c = nn.Sequential(
+            self.att_c = nn.SequentialCell(
                 nn.Conv2d(2*out_ch, out_ch//g, 1, 1, 0),
                 nn.ReLU(),
                 nn.Conv2d(out_ch//g, out_ch, 1, 1, 0),
                 nn.Sigmoid()
             )
         if spatial_att:
-            self.att_s = nn.Sequential(
+            self.att_s = nn.SequentialCell(
                 nn.Conv2d(in_channels=2, out_channels=1, kernel_size=7, stride=1, padding=3),
                 nn.Sigmoid()
             )
@@ -95,12 +95,12 @@ class KPN(nn.Cell):
         self.core_bias = core_bias
         self.color_channel = 3 if color else 1
         in_channel = (3 if color else 1) * (burst_length if blind_est else burst_length+1)
-        out_channel = (3 if color else 1) * (2 * sum(kernel_size) if sep_conv else np.sum(np.array(kernel_size) ** 2)) * burst_length
+        out_channel = int((3 if color else 1) * (2 * sum(kernel_size) if sep_conv else np.sum(np.array(kernel_size) ** 2)) * burst_length)
         if core_bias:
             out_channel += (3 if color else 1) * burst_length
         # 各个卷积层定义
         # 2~5层都是均值池化+3层卷积
-        self.conv1 = Basic(in_channel, 64, channel_att=False, spatial_att=False)
+        self.conv1 = Basic(in_channel, int(64), channel_att=False, spatial_att=False)
         self.conv2 = Basic(64, 128, channel_att=False, spatial_att=False)
         self.conv3 = Basic(128, 256, channel_att=False, spatial_att=False)
         self.conv4 = Basic(256, 512, channel_att=False, spatial_att=False)
@@ -109,11 +109,11 @@ class KPN(nn.Cell):
         self.conv6 = Basic(512+512, 512, channel_att=channel_att, spatial_att=spatial_att)
         self.conv7 = Basic(256+512, 256, channel_att=channel_att, spatial_att=spatial_att)
         self.conv8 = Basic(256+128, out_channel, channel_att=channel_att, spatial_att=spatial_att)
-        self.outc = nn.Conv2d(out_channel, out_channel, 1, 1, 0)
+        self.outc = nn.Conv2d(out_channel, out_channel, 1, 1, 'valid')
 
         self.kernel_pred = KernelConv(kernel_size, sep_conv, self.core_bias)
         
-        self.conv_final = nn.Conv2d(in_channels=12, out_channels=3, kernel_size=3, stride=1, padding=1)
+        self.conv_final = nn.Conv2d(in_channels=12, out_channels=3, kernel_size=3, stride=1, padding=1,pad_mode='pad')
 
     # 前向传播函数
     def forward(self, data_with_est, data, white_level=1.0):

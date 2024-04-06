@@ -1,12 +1,30 @@
-import mindspore.dataset as Dataset
+import mindspore
+import mindspore.dataset as ds
 import cv2
 import random
 import numpy as np
+from utils.dataloder import * 
+class RandomCrop(object):
+    def __init__(self, image_size, crop_size):
+        self.ch, self.cw = crop_size
+        ih, iw = image_size
 
-class DenoisingDataset(Dataset):
+        self.h1 = random.randint(0, ih - self.ch)
+        self.w1 = random.randint(0, iw - self.cw)
+
+        self.h2 = self.h1 + self.ch
+        self.w2 = self.w1 + self.cw
+
+    def __call__(self, img):
+        if len(img.shape) == 3:
+            return img[self.h1: self.h2, self.w1: self.w2, :]
+        else:
+            return img[self.h1: self.h2, self.w1: self.w2]
+
+class DenoisingDataset(ds.MapDataset):
     def __init__(self, opt):                                   		    # root: list ; transform: torch transform
         self.opt = opt
-        self.imglist = utils.get_files(opt.baseroot)
+        self.imglist = get_files(opt.baseroot)
         self.rainaug = opt.rainaug
         '''
         for pair in self.imglist:
@@ -124,12 +142,119 @@ class DenoisingDataset(Dataset):
         img_rainy = img_rainy.astype(np.float32) # RGB image in range [0, 255]
         img_gt = img_gt.astype(np.float32) # RGB image in range [0, 255]
         img_rainy = img_rainy / 255.0
-        img_rainy = torch.from_numpy(img_rainy.transpose(2, 0, 1)).contiguous()
+        img_rainy = mindspore.Tensor(img_rainy.transpose(2, 0, 1)).contiguous()
         img_gt = img_gt / 255.0
-        img_gt = torch.from_numpy(img_gt.transpose(2, 0, 1)).contiguous()
+        img_gt = mindspore.Tensor(img_gt.transpose(2, 0, 1)).contiguous()
 
         return img_rainy, img_gt
     
     def __len__(self):
         return len(self.imglist)
     
+
+
+class DenoisingValDataset(ds.MapDataset):
+    def __init__(self, opt):                                   		    # root: list ; transform: torch transform
+        self.opt = opt
+        self.imglist = get_files(opt.baseroot)
+
+    def __getitem__(self, index):
+        ## read an image
+        img_rainy = cv2.imread(self.imglist[index][0])
+        img_gt = cv2.imread(self.imglist[index][1])
+        
+        
+        height = img_rainy.shape[0]
+        width = img_rainy.shape[1]
+        height_origin = height
+        width_origin = width
+        if height % 16 != 0:
+            height = ((height // 16) + 1) * 16
+        if width % 16 !=0:
+            width = ((width // 16) + 1) * 16
+        img_rainy = cv2.resize(img_rainy, (width, height))
+        img_gt = cv2.resize(img_gt, (width, height))
+        
+        '''
+        img_rainy = cv2.resize(img_rainy, (256, 256))
+        img_gt = cv2.resize(img_gt, (256, 256))
+        '''
+        
+        ''' 
+        if img_rainy.shape[0] < self.opt.crop_size or img_rainy.shape[1] < self.opt.crop_size:
+            img_rainy=cv2.copyMakeBorder(img_rainy, 0, max(0, -img_rainy.shape[0]+self.opt.crop_size), 0, max(0, -img_rainy.shape[1]+self.opt.crop_size), cv2.BORDER_DEFAULT)
+            img_gt=cv2.copyMakeBorder(img_gt, 0, max(0, -img_gt.shape[0]+self.opt.crop_size), 0, max(0, -img_gt.shape[1]+self.opt.crop_size), cv2.BORDER_DEFAULT)
+            #print(img_rainy.shape[0], img_rainy.shape[1])
+        '''
+
+        img_rainy = cv2.cvtColor(img_rainy, cv2.COLOR_BGR2RGB)
+        img_gt = cv2.cvtColor(img_gt, cv2.COLOR_BGR2RGB)
+        
+
+        '''
+        ## data augmentation
+        # random scale
+        if self.opt.geometry_aug:
+            H_in = img[0].shape[0]
+            W_in = img[0].shape[1]
+            sc = np.random.uniform(self.opt.scale_min, self.opt.scale_max)
+            H_out = int(math.floor(H_in * sc))
+            W_out = int(math.floor(W_in * sc))
+            # scaled size should be greater than opts.crop_size
+            if H_out < W_out:
+                if H_out < self.opt.crop_size:
+                    H_out = self.opt.crop_size
+                    W_out = int(math.floor(W_in * float(H_out) / float(H_in)))
+            else: # W_out < H_out
+                if W_out < self.opt.crop_size:
+                    W_out = self.opt.crop_size
+                    H_out = int(math.floor(H_in * float(W_out) / float(W_in)))
+            img = cv2.resize(img, (W_out, H_out))
+        '''
+
+        # random crop
+        if self.opt.crop:
+            cropper = RandomCrop(img_rainy.shape[:2], (self.opt.crop_size, self.opt.crop_size))
+            img_rainy = cropper(img_rainy)
+            img_gt = cropper(img_gt)
+        # random rotate and horizontal flip
+        # according to paper, these two data augmentation methods are recommended
+        if self.opt.angle_aug:
+            rotate = random.randint(0, 3)
+            if rotate != 0:
+                img_rainy = np.rot90(img_rainy, rotate)
+                img_gt = np.rot90(img_gt, rotate)
+            if np.random.random() >= 0.5:
+                img_rainy = cv2.flip(img_rainy, flipCode = 0)
+                img_gt = cv2.flip(img_gt, flipCode = 0)
+                
+        '''        
+        # add noise
+        if self.opt.add_noise:
+            img = img.astype(np.float32) # RGB image in range [0, 255]
+            noise = np.random.normal(self.opt.mu, self.opt.sigma, img.shape).astype(np.float32)
+            noisy_img = img + noise
+            # normalization
+            img = img / 255.0
+            img = torch.from_numpy(img.transpose(2, 0, 1)).contiguous()
+            noisy_img = noisy_img / 255.0
+            noisy_img = torch.from_numpy(noisy_img.transpose(2, 0, 1)).contiguous()
+        else:
+            img = img.astype(np.float32) # RGB image in range [0, 255]
+            # normalization
+            img = img / 255.0
+            img = torch.from_numpy(img.transpose(2, 0, 1)).contiguous()
+            noisy_img = img
+        '''
+        # normalization
+        img_rainy = img_rainy.astype(np.float32) # RGB image in range [0, 255]
+        img_gt = img_gt.astype(np.float32) # RGB image in range [0, 255]
+        img_rainy = img_rainy / 255.0
+        img_rainy = mindspore.Tensor(img_rainy.transpose(2, 0, 1)).contiguous()
+        img_gt = img_gt / 255.0
+        img_gt = mindspore.Tensor(img_gt.transpose(2, 0, 1)).contiguous()
+
+        return img_rainy, img_gt, height_origin, width_origin
+    
+    def __len__(self):
+        return len(self.imglist)
